@@ -1,11 +1,15 @@
 import argparse
+from pyspark.sql.types import *
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf
+from pyspark.sql.functions import udf, from_json
 from pyspark import SparkContext
 
 
-def decode_json(line):
-    return line.decode("utf-8")
+def decode_json(row):
+    """
+    :param row: A pyspark dataframe row
+    """
+    return row.decode("utf-8")
 
 
 def main():
@@ -28,8 +32,16 @@ def main():
         .option("subscribe", topic) \
         .load()
     decode_json_udf = udf(decode_json)
-    product_categories = lines.select("value").withColumn("value", decode_json_udf("value"))
-    pc = product_categories \
+    values_schema = StructType([
+        StructField("device_category", StringType()),
+        StructField("product_category", StringType()),
+        StructField("amount", FloatType())])
+    values = lines.select("value") \
+        .withColumn("value", decode_json_udf("value")) \
+        .select(from_json("value", values_schema).alias("parsed_value"))
+
+    pc = values\
+        .select("parsed_value.*")\
         .writeStream \
         .outputMode("append") \
         .format("console") \
